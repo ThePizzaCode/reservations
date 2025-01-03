@@ -1,0 +1,1 @@
+train_id:6969,seats:175;
