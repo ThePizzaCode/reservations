@@ -1,8 +1,6 @@
 #!/bin/bash
 
-DB_FILE="train_reservations.db"
-SERVER_PORT=6903
-CLIENT_PORT=6904
+DB_FILE="../reservations/train_reservations.db"
 
 initialize_db() {
     sqlite3 $DB_FILE "CREATE TABLE IF NOT EXISTS reservations (
@@ -32,7 +30,7 @@ reserve_seats() {
     available_seats=$(check_available_seats "$train_id")
 
     if [[ -z "$available_seats" || "$available_seats" -lt "$requested_seats" ]]; then
-        echo "error,Not enough available seats for train $train_id"
+        echo "error,not enough available seats for train $train_id"
         return
     fi
 
@@ -47,44 +45,64 @@ reserve_seats() {
 }
 
 send_available_seats_to_train_ops() {
-    train_ids=$1
-    response=""
+    train_ids=($@)
+    response=()
 
-    for train_id in $(echo "$train_ids" | tr "," " "); do
+    for train_id in ${train_ids[@]}; do
         available_seats=$(check_available_seats "$train_id")
         if [[ -z "$available_seats" ]]; then
-            response+="train_id:$train_id,seats:N/A;"
+            response+=("-")
         else
-            response+="train_id:$train_id,seats:$available_seats;"
+            response+=("$available_seats")
         fi
     done
 
-    echo "$response" | nc -q 0 127.0.0.1 $CLIENT_PORT
+    echo ${response[@]}
 }
 
 
 initialize_db
 
 handle_request() {
-    request=$1
-    case $(echo "$request" | cut -d"," -f1) in
-        add_reservation)
-            user_id=$(echo "$request" | cut -d"," -f2)
-            train_id=$(echo "$request" | cut -d"," -f3)
-            no_of_seats=$(echo "$request" | cut -d"," -f4)
-            response=$(reserve_seats "$user_id" "$train_id" "$no_of_seats")
-            echo "$response";;
-        get_available_seats)
-            train_ids=$(echo "$request" | cut -d"," -f2)
-            send_available_seats_to_train_ops "$train_ids";;
+    IFS="," read -r -a request <<< "$1"
+    
+    endpoint=${request[0]}
+
+    case $endpoint in
+        train_id)
+            id=${request[1]}
+            response=$(check_available_seats $id)
+            if [[ -z $response ]] then 
+                echo "error,train_id not found"
+            else 
+                echo $response 
+            fi
+            ;;
+
+        reserve)
+            user_id=${request[1]}
+            train_id=${request[2]}
+            no_of_seats=${request[3]}
+
+            response=$(reserve_seats $user_id $train_id $no_of_seats)
+            echo $response
+            ;;
+
+        check)
+            train_ids=${request[@]:1}
+            response_array=($(send_available_seats_to_train_ops ${request[@]:1}))
+
+            response=$(printf "%s," "${response_array[@]}")
+            response=${response%,} 
+
+            echo $response
+            ;;
+
         *)
-            echo "error,Invalid request";;
+            echo 404;;
     esac
+
+    echo DONE
 }
 
-while true; do
-    echo "Listening on port $SERVER_PORT..."
-    nc -lk -p $SERVER_PORT | while read -r request; do
-        handle_request "$request"
-    done
-done
+handle_request "$1"
