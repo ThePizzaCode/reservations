@@ -69,7 +69,7 @@ handle_request() {
     endpoint=${request[0]}
 
     case $endpoint in
-        train_id)
+        avail)
             id=${request[1]}
             response=$(check_available_seats $id)
             if [[ -z $response ]] then 
@@ -88,7 +88,7 @@ handle_request() {
             echo $response
             ;;
 
-        check)
+        avail_multi)
             train_ids=${request[@]:1}
             response_array=($(send_available_seats_to_train_ops ${request[@]:1}))
 
@@ -102,7 +102,7 @@ handle_request() {
             echo 404;;
     esac
 
-    echo DONE
+    echo CLOSE
 }
 
 handle_request "$1"
